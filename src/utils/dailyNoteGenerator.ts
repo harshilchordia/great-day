@@ -1,17 +1,17 @@
 import type { App } from 'obsidian';
 import { TFile, Notice, normalizePath, moment, requestUrl } from 'obsidian';
 import type { GreatDaySettings } from '../settings';
-import type { Task } from '../types';
+import type { Task, TaskScope } from '../types';
 import {
 	parseTodos,
-	getFoodForDay,
 	getExerciseForDay,
 	getReminders,
+	serialiseTodos,
 } from './todosParser';
 import { sampleForScope } from './taskSampler';
 import { parseIcsForDate, type CalendarEvent } from './icsParser';
 import { syncPreviousNotes } from './rollover';
-import { dayShort, dayLong, formatDate } from './dateUtils';
+import { dayLong, formatDate } from './dateUtils';
 
 /** Resolves {{year}} in a folder path to the current year. */
 export function resolveFolder(path: string, date: moment.Moment): string {
@@ -20,7 +20,7 @@ export function resolveFolder(path: string, date: moment.Moment): string {
 
 /** Checks if a date is a weekend (Saturday or Sunday). */
 function isWeekend(date: moment.Moment): boolean {
-	const day = date.day(); // 0=Sun, 6=Sat
+	const day = date.day();
 	return day === 0 || day === 6;
 }
 
@@ -78,37 +78,31 @@ function formatEvents(events: CalendarEvent[]): string[] {
 	return lines;
 }
 
-/** Parses a food table row into lunch/dinner. */
-function parseFoodRow(row: string): { lunch: string; dinner: string } | null {
-	const cells = row.split('|').map((c) => c.trim()).filter((c) => c.length > 0);
-	if (cells.length < 3) return null;
-	return {
-		lunch: cells[1] ?? '',
-		dinner: cells[2] ?? '',
-	};
-}
-
-/** Extracts exercise items as a flat list. */
-function extractExerciseItems(exerciseText: string): string[] {
-	const lines = exerciseText.split('\n');
-	const items: string[] = [];
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
-		if (trimmed.endsWith(':') && !trimmed.startsWith('-')) continue;
-		const text = trimmed.replace(/^-\s*/, '');
-		if (text) items.push(text);
+/** Returns the urgency tag suffix for a task scope. */
+function urgencySuffix(scope: TaskScope, scheduledDate: string | null): string {
+	if (scope === 'scheduled' && scheduledDate) {
+		return ` (${scheduledDate})`;
 	}
-	return items;
+	const tagMap: Record<TaskScope, string> = {
+		day: '(D)',
+		week: '(W)',
+		month: '(M)',
+		year: '(Y)',
+		scheduled: '',
+	};
+	return ` ${tagMap[scope]}`;
 }
 
-/** Formats a task and its children as checkbox lines. */
+/** Formats a task and its children as checkbox lines with urgency tags. */
 function formatTaskLines(tasks: Task[], startIndent: number): string[] {
 	const lines: string[] = [];
 	for (const task of tasks) {
 		const indent = '\t'.repeat(startIndent + (task.indent > 0 ? 1 : 0));
 		const checkbox = task.done ? '- [x]' : '- [ ]';
-		lines.push(`${indent}${checkbox} ${task.text}`);
+		const suffix = urgencySuffix(task.scope, task.scheduledDate);
+		// Only top-level tasks get the urgency tag (children inherit parent's)
+		const tag = task.indent === 0 ? suffix : '';
+		lines.push(`${indent}${checkbox} ${task.text}${tag}`);
 	}
 	return lines;
 }
@@ -123,7 +117,6 @@ export async function generateDailyNoteContent(
 	if (!raw) return '';
 
 	const data = parseTodos(raw);
-	const dayName = dayShort(date);
 	const fullDayName = dayLong(date);
 	const dateTag = date.format('DD-MM-YYYY');
 
@@ -133,17 +126,21 @@ export async function generateDailyNoteContent(
 	// Header
 	lines.push('# TODOs');
 
-	// Reminders (skip on chill weekends)
+	// Reminders (includes Exercise/Swimming as a reminder)
 	if (!chillWeekend) {
-	const reminders = getReminders(data.reminderLines);
-	if (reminders.length > 0) {
-		lines.push('- [ ] Reminders');
-		for (const reminder of reminders) {
-			lines.push(`\t- [ ] ${reminder}`);
+		const reminders = getReminders(data.reminderLines);
+		// Add Exercise/Swimming as a reminder based on day
+		const exerciseText = getExerciseForDay(data.exercisePlanText, fullDayName);
+		if (exerciseText) {
+			reminders.push('Exercise/Swimming');
+		}
+		if (reminders.length > 0) {
+			lines.push('- [ ] Reminders');
+			for (const reminder of reminders) {
+				lines.push(`\t- [ ] ${reminder}`);
+			}
 		}
 	}
-
-	} // end reminders
 
 	// Calendar events
 	const events = await fetchCalendarEvents(settings, date);
@@ -153,33 +150,6 @@ export async function generateDailyNoteContent(
 			lines.push(line);
 		}
 	}
-
-	// Exercise (skip on chill weekends)
-	if (!chillWeekend) {
-	const exerciseText = getExerciseForDay(data.exercisePlanText, fullDayName);
-	if (exerciseText) {
-		const exerciseItems = extractExerciseItems(exerciseText);
-		lines.push('- [ ] Exercise');
-		for (const item of exerciseItems) {
-			lines.push(`\t- [ ] ${item}`);
-		}
-	}
-
-	} // end exercise
-
-	// Food (skip on chill weekends)
-	if (!chillWeekend) {
-	const foodRow = getFoodForDay(data.foodPlanLines, dayName);
-	if (foodRow) {
-		const parsed = parseFoodRow(foodRow);
-		lines.push('- [ ] Food');
-		if (parsed) {
-			lines.push(`\t- [ ] Lunch: ${parsed.lunch}`);
-			lines.push(`\t- [ ] Dinner: ${parsed.dinner}`);
-		}
-	}
-
-	} // end food
 
 	// Tasks: scheduled (matching today), day, sampled week, sampled month, sampled year
 	const scheduledTasks = data.tasks.scheduled.filter(
@@ -210,7 +180,31 @@ export async function generateDailyNoteContent(
 		}
 	}
 
-	// Weekly review (skip on chill weekends)
+	// Convert shown (W) tasks to (D) in TODOs (they were shown, so next time they're day tasks)
+	if (!chillWeekend && weekTasks.length > 0) {
+		const todosFile = app.vault.getAbstractFileByPath(
+			normalizePath(settings.todosFilePath),
+		);
+		if (todosFile && todosFile instanceof TFile) {
+			const todosRaw = await app.vault.read(todosFile);
+			const todosData = parseTodos(todosRaw);
+			const shownWeekTexts = new Set(weekTasks.filter(t => t.indent === 0).map(t => t.text));
+			const newDayTasks: Task[] = [];
+			todosData.tasks.week = todosData.tasks.week.filter(t => {
+				if (shownWeekTexts.has(t.text)) {
+					// Convert to day task
+					newDayTasks.push({ ...t, scope: 'day' });
+					return false;
+				}
+				// Keep children if parent is kept
+				return true;
+			});
+			todosData.tasks.day.push(...newDayTasks);
+			await app.vault.modify(todosFile, serialiseTodos(todosData));
+		}
+	}
+
+	// Weekly review
 	if (!chillWeekend && settings.weeklyReview && date.day() === settings.weeklyReviewDay) {
 		lines.push('- [ ] Review and update TODOs');
 	}

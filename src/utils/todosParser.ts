@@ -3,10 +3,10 @@ import type { Task, TaskScope, TodosData } from '../types';
 /** Matches a checkbox task line: `- [ ]` or `- [x]` (case-insensitive). */
 const TASK_RE = /^(\s*)- \[([ xX])\] (.*)$/;
 
-/** Matches scope tags in new tasks: (D), (W), (M), (Y). */
+/** Matches scope tags in task text: (D), (W), (M), (Y). */
 const TAG_RE = /\(([DWdwmM])\)\s*$/;
 
-/** Matches date tags in new tasks: (DD-MM-YYYY). */
+/** Matches date tags in task text: (DD-MM-YYYY). */
 const DATE_TAG_RE = /\((\d{2}-\d{2}-\d{4})\)\s*$/;
 
 /** Maps a tag character to a scope. */
@@ -21,7 +21,7 @@ function tagToScope(ch: string): TaskScope | null {
 }
 
 /** Tracks which section we're currently parsing. */
-type Section = 'food' | 'reminders' | 'exercise' | 'day' | 'week' | 'month' | 'year' | 'scheduled' | null;
+type Section = 'reminders' | 'exercise' | 'day' | 'week' | 'month' | 'year' | 'scheduled' | null;
 
 /** Checks if a line is a heading we recognise for task sections. */
 function matchTaskSection(trimmedLower: string): Section {
@@ -44,10 +44,20 @@ export function stripDateTag(text: string): string {
 	return text.replace(DATE_TAG_RE, '').trimEnd();
 }
 
+/** Extracts a scope tag (D)/(W)/(M)/(Y) from task text, if present. */
+export function extractScopeTag(text: string): string | null {
+	const match = text.match(TAG_RE);
+	return match?.[0] ?? null;
+}
+
+/** Removes the scope tag from task text. */
+export function stripScopeTag(text: string): string {
+	return text.replace(TAG_RE, '').trimEnd();
+}
+
 /** Parses the full TODOs.md text into structured data. */
 export function parseTodos(raw: string): TodosData {
 	const lines = raw.split('\n');
-	const foodPlanLines: string[] = [];
 	const exercisePlanLines: string[] = [];
 	const reminderLines: string[] = [];
 	const tasks: Record<TaskScope, Task[]> = {
@@ -59,8 +69,9 @@ export function parseTodos(raw: string): TodosData {
 	for (const line of lines) {
 		const trimmedLower = line.trim().toLowerCase();
 
+		// Skip food plan section entirely
 		if (trimmedLower.startsWith('# food plan')) {
-			currentSection = 'food';
+			currentSection = null;
 			continue;
 		}
 
@@ -78,15 +89,6 @@ export function parseTodos(raw: string): TodosData {
 		if (taskSection) {
 			currentSection = taskSection;
 			continue;
-		}
-
-		if (currentSection === 'food') {
-			if (trimmedLower.startsWith('#')) {
-				currentSection = null;
-			} else {
-				foodPlanLines.push(line);
-				continue;
-			}
 		}
 
 		if (currentSection === 'reminders') {
@@ -107,16 +109,19 @@ export function parseTodos(raw: string): TodosData {
 			}
 		}
 
+		// Parse task lines in task sections
 		const taskMatch = line.match(TASK_RE);
 		if (taskMatch && currentSection && (currentSection === 'day' || currentSection === 'week' || currentSection === 'month' || currentSection === 'year' || currentSection === 'scheduled')) {
 			const indentStr = taskMatch[1] ?? '';
 			const doneChar = taskMatch[2] ?? ' ';
 			const rawText = taskMatch[3] ?? '';
-			const scheduledDate = currentSection === 'scheduled' ? extractDateTag(rawText) : null;
-			const text = scheduledDate ? stripDateTag(rawText) : rawText;
+			// Strip any trailing scope or date tags from text (so they're not doubled)
+			let cleanText = stripScopeTag(rawText);
+			const scheduledDate = currentSection === 'scheduled' ? extractDateTag(cleanText) : null;
+			cleanText = scheduledDate ? stripDateTag(cleanText) : cleanText;
 			tasks[currentSection].push({
 				raw: line,
-				text,
+				text: cleanText,
 				done: doneChar.toLowerCase() === 'x',
 				scope: currentSection,
 				indent: indentStr.length,
@@ -127,7 +132,6 @@ export function parseTodos(raw: string): TodosData {
 
 	const exercisePlanText = exercisePlanLines
 		.filter((line, idx, arr) => {
-			// Collapse consecutive blank lines
 			const trimmed = line.trim();
 			if (trimmed === '' && idx > 0 && arr[idx - 1]?.trim() === '') return false;
 			return true;
@@ -137,22 +141,10 @@ export function parseTodos(raw: string): TodosData {
 
 	return {
 		raw,
-		foodPlanLines,
 		exercisePlanText,
 		reminderLines,
 		tasks,
 	};
-}
-
-/** Extracts the food row for a given day short-name (e.g. "Mon", "Tue"). */
-export function getFoodForDay(foodPlanLines: string[], dayName: string): string | null {
-	for (const line of foodPlanLines) {
-		const trimmed = line.trim();
-		if (trimmed.startsWith('|') && trimmed.toLowerCase().includes(dayName.toLowerCase())) {
-			return line;
-		}
-	}
-	return null;
 }
 
 /** Extracts the exercise text for a given full day name (e.g. "Monday", "Saturday"). */
@@ -204,7 +196,6 @@ export function getReminders(reminderLines: string[]): string[] {
 	for (const line of reminderLines) {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
-		// Strip leading "- " if present
 		const text = trimmed.replace(/^-\s*/, '');
 		if (text) reminders.push(text);
 	}
@@ -241,11 +232,6 @@ function buildTaskLine(task: Task): string {
 /** Serialises TodosData back into file text. */
 export function serialiseTodos(data: TodosData): string {
 	const sections: string[] = [];
-
-	if (data.foodPlanLines.length > 0) {
-		sections.push('# Food Plan');
-		sections.push(data.foodPlanLines.join('\n').trim());
-	}
 
 	if (data.reminderLines.length > 0) {
 		sections.push('# Reminders');

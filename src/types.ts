@@ -5,7 +5,7 @@ export type TaskScope = 'day' | 'week' | 'month' | 'year' | 'scheduled';
 export interface Task {
 	/** The raw text of the task, including checkbox `- [ ]` or `- [x]`. */
 	raw: string;
-	/** The task text without the checkbox prefix. */
+	/** The task text without the checkbox prefix or scope/date tags. */
 	text: string;
 	/** Whether the task is checked off. */
 	done: boolean;
@@ -21,12 +21,10 @@ export interface Task {
 export interface TodosData {
 	/** Raw file text. */
 	raw: string;
-	/** Lines that make up the food plan table. */
-	foodPlanLines: string[];
-	/** Raw text of the exercise plan section. */
-	exercisePlanText: string;
 	/** Lines from the Reminders section (plain `- item` lines, no checkboxes). */
 	reminderLines: string[];
+	/** Raw text of the exercise plan section. */
+	exercisePlanText: string;
 	/** Tasks grouped by scope. */
 	tasks: Record<TaskScope, Task[]>;
 }
