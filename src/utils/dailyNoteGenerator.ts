@@ -124,7 +124,7 @@ export async function generateDailyNoteContent(
 	const chillWeekend = settings.chillWeekends && isWeekend(date);
 
 	// Header
-	lines.push('# TODOs');
+	lines.push("# What a great day!");
 
 	// Reminders (includes Exercise/Swimming as a reminder)
 	if (!chillWeekend) {
@@ -180,26 +180,37 @@ export async function generateDailyNoteContent(
 		}
 	}
 
-	// Convert shown (W) tasks to (D) in TODOs (they were shown, so next time they're day tasks)
-	if (!chillWeekend && weekTasks.length > 0) {
+	// Demote shown tasks: (W)→(D), (M)→(W), (Y)→(M) in TODOs
+	// (they were shown, so next time they're more urgent)
+	if (!chillWeekend) {
 		const todosFile = app.vault.getAbstractFileByPath(
 			normalizePath(settings.todosFilePath),
 		);
 		if (todosFile && todosFile instanceof TFile) {
 			const todosRaw = await app.vault.read(todosFile);
 			const todosData = parseTodos(todosRaw);
-			const shownWeekTexts = new Set(weekTasks.filter(t => t.indent === 0).map(t => t.text));
-			const newDayTasks: Task[] = [];
-			todosData.tasks.week = todosData.tasks.week.filter(t => {
-				if (shownWeekTexts.has(t.text)) {
-					// Convert to day task
-					newDayTasks.push({ ...t, scope: 'day' });
-					return false;
-				}
-				// Keep children if parent is kept
-				return true;
-			});
-			todosData.tasks.day.push(...newDayTasks);
+
+			const demoteMap: Record<string, TaskScope> = {
+				week: 'day',
+				month: 'week',
+				year: 'month',
+			};
+
+			for (const [fromScope, toScope] of Object.entries(demoteMap) as [TaskScope, TaskScope][]) {
+				const shownTaskList = fromScope === 'week' ? weekTasks : fromScope === 'month' ? monthTasks : yearTasks;
+				if (shownTaskList.length === 0) continue;
+				const shownTexts = new Set(shownTaskList.filter(t => t.indent === 0).map(t => t.text));
+				const moved: Task[] = [];
+				todosData.tasks[fromScope] = todosData.tasks[fromScope].filter(t => {
+					if (shownTexts.has(t.text)) {
+						moved.push({ ...t, scope: toScope, scheduledDate: null });
+						return false;
+					}
+					return true;
+				});
+				todosData.tasks[toScope].push(...moved);
+			}
+
 			await app.vault.modify(todosFile, serialiseTodos(todosData));
 		}
 	}
