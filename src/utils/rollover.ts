@@ -157,10 +157,9 @@ export async function syncRollover(
 
 	const dailyContent = await app.vault.read(dailyFile);
 
-	if (isNoteSynced(dailyContent)) {
-		return { rolledBack: [], completed: [], appended: { day: [], week: [], month: [], year: [], scheduled: [] } };
-	}
-
+	// Don't skip already-synced notes — they may have been synced before
+	// new tasks were added (e.g. sync from another device). Reprocess always;
+	// duplicate prevention (checking if task exists in TODOs) prevents double-adding.
 	const parsed = parseDailyNote(dailyContent, settings);
 
 	const todosFile = app.vault.getAbstractFileByPath(
@@ -260,8 +259,9 @@ export async function syncRollover(
 	const newTodos = serialiseTodos(data);
 	await app.vault.modify(todosFile, newTodos);
 
-	// Mark the daily note as synced
-	const updatedContent = dailyContent.trimEnd() + '\n\n' + SYNCED_MARKER + '\n';
+	// Mark the daily note as synced (replace existing marker if present)
+	let updatedContent = dailyContent.replace(SYNCED_MARKER, '').trimEnd();
+	updatedContent += '\n\n' + SYNCED_MARKER + '\n';
 	await app.vault.modify(dailyFile, updatedContent);
 
 	// Collect rolledBack (unchecked pulled tasks)
