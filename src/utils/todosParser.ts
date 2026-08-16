@@ -68,19 +68,24 @@ export function parseTodos(raw: string): TodosData {
 
 	for (const line of lines) {
 		const trimmedLower = line.trim().toLowerCase();
+		// Strip leading heading markers (# or ##) so section headers are recognised
+		// regardless of heading level (some tools, e.g. Obsidian Linter, may rewrite
+		// heading levels in the file).
+		const isHeading = /^#{1,2}\s/.test(trimmedLower);
+		const headingBody = isHeading ? trimmedLower.replace(/^#{1,2}\s+/, '') : '';
 
 		// Skip food plan section entirely
-		if (trimmedLower.startsWith('# food plan')) {
+		if (isHeading && headingBody.startsWith('food plan')) {
 			currentSection = null;
 			continue;
 		}
 
-		if (trimmedLower.startsWith('# reminders')) {
+		if (isHeading && headingBody.startsWith('reminders')) {
 			currentSection = 'reminders';
 			continue;
 		}
 
-		if (trimmedLower.startsWith('# exercise plan')) {
+		if (isHeading && headingBody.startsWith('exercise plan')) {
 			currentSection = 'exercise';
 			continue;
 		}
