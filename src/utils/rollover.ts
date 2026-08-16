@@ -231,6 +231,7 @@ export async function syncRollover(
 					scope: 'scheduled',
 					indent: 0,
 					scheduledDate: dateTag,
+					shownCount: 0,
 				});
 				result.appended.scheduled.push(cleanText);
 			}
@@ -249,6 +250,7 @@ export async function syncRollover(
 					scope: tagResult.scope,
 					indent: 0,
 					scheduledDate: null,
+					shownCount: 0,
 				});
 				result.appended[tagResult.scope].push(cleanText);
 			}

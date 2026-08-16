@@ -9,6 +9,13 @@ const TAG_RE = /\(([DWdwmM])\)\s*$/;
 /** Matches date tags in task text: (DD-MM-YYYY). */
 const DATE_TAG_RE = /\((\d{2}-\d{2}-\d{4})\)\s*$/;
 
+/**
+ * Matches the hidden "shown count" marker appended to week/month/year tasks,
+ * e.g. `<!--shown:2-->`. Written as an HTML comment so it doesn't clutter the
+ * rendered note in Obsidian's reading view.
+ */
+const SHOWN_COUNT_RE = /<!--shown:(\d+)-->\s*$/;
+
 /** Maps a tag character to a scope. */
 function tagToScope(ch: string): TaskScope | null {
 	switch (ch.toUpperCase()) {
@@ -42,6 +49,19 @@ export function extractDateTag(text: string): string | null {
 /** Removes the date tag from task text. */
 export function stripDateTag(text: string): string {
 	return text.replace(DATE_TAG_RE, '').trimEnd();
+}
+
+/** Extracts the hidden shown-count marker from task text, if present. Defaults to 0. */
+export function extractShownCount(text: string): number {
+	const match = text.match(SHOWN_COUNT_RE);
+	if (!match?.[1]) return 0;
+	const n = parseInt(match[1], 10);
+	return Number.isNaN(n) ? 0 : n;
+}
+
+/** Removes the hidden shown-count marker from task text. */
+export function stripShownCount(text: string): string {
+	return text.replace(SHOWN_COUNT_RE, '').trimEnd();
 }
 
 /** Extracts a scope tag (D)/(W)/(M)/(Y) from task text, if present. */
@@ -122,6 +142,8 @@ export function parseTodos(raw: string): TodosData {
 			const rawText = taskMatch[3] ?? '';
 			// Strip any trailing scope or date tags from text (so they're not doubled)
 			let cleanText = stripScopeTag(rawText);
+			const shownCount = extractShownCount(cleanText);
+			cleanText = stripShownCount(cleanText);
 			const scheduledDate = currentSection === 'scheduled' ? extractDateTag(cleanText) : null;
 			cleanText = scheduledDate ? stripDateTag(cleanText) : cleanText;
 			tasks[currentSection].push({
@@ -131,6 +153,7 @@ export function parseTodos(raw: string): TodosData {
 				scope: currentSection,
 				indent: indentStr.length,
 				scheduledDate,
+				shownCount,
 			});
 		}
 	}
@@ -231,7 +254,8 @@ function buildTaskLine(task: Task): string {
 	if (task.scope === 'scheduled' && task.scheduledDate) {
 		suffix = ` (${task.scheduledDate})`;
 	}
-	return `${indent}${checkbox} ${task.text}${suffix}`;
+	const shownMarker = task.shownCount > 0 ? ` <!--shown:${task.shownCount}-->` : '';
+	return `${indent}${checkbox} ${task.text}${suffix}${shownMarker}`;
 }
 
 /** Serialises TodosData back into file text. */

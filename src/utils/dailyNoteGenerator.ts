@@ -180,8 +180,10 @@ export async function generateDailyNoteContent(
 		}
 	}
 
-	// Demote shown tasks: (W)→(D), (M)→(W), (Y)→(M) in TODOs
-	// (they were shown, so next time they're more urgent)
+	// Demote shown tasks: (W)→(D), (M)→(W), (Y)→(M) in TODOs, once a task has
+	// been surfaced `settings.showsBeforeDemotion` times. Until that threshold
+	// is reached, the task stays in its current scope with its shown-count
+	// incremented, so it can keep reappearing before being pulled down.
 	if (!chillWeekend) {
 		const todosFile = app.vault.getAbstractFileByPath(
 			normalizePath(settings.todosFilePath),
@@ -189,6 +191,7 @@ export async function generateDailyNoteContent(
 		if (todosFile && todosFile instanceof TFile) {
 			const todosRaw = await app.vault.read(todosFile);
 			const todosData = parseTodos(todosRaw);
+			const threshold = Math.max(1, settings.showsBeforeDemotion);
 
 			const demoteMap: Record<string, TaskScope> = {
 				week: 'day',
@@ -200,15 +203,34 @@ export async function generateDailyNoteContent(
 				const shownTaskList = fromScope === 'week' ? weekTasks : fromScope === 'month' ? monthTasks : yearTasks;
 				if (shownTaskList.length === 0) continue;
 				const shownTexts = new Set(shownTaskList.filter(t => t.indent === 0).map(t => t.text));
-				const moved: Task[] = [];
-				todosData.tasks[fromScope] = todosData.tasks[fromScope].filter(t => {
-					if (shownTexts.has(t.text)) {
-						moved.push({ ...t, scope: toScope, scheduledDate: null });
-						return false;
+
+				const kept: Task[] = [];
+				const demoted: Task[] = [];
+				const source = todosData.tasks[fromScope];
+				for (let i = 0; i < source.length; i++) {
+					const t = source[i];
+					if (!t) continue;
+					if (t.indent === 0 && shownTexts.has(t.text)) {
+						const newCount = t.shownCount + 1;
+						if (newCount >= threshold) {
+							// Demote this task and pull its children along with it.
+							demoted.push({ ...t, scope: toScope, scheduledDate: null, shownCount: 0 });
+							for (let j = i + 1; j < source.length; j++) {
+								const child = source[j];
+								if (!child || child.indent <= t.indent) break;
+								demoted.push({ ...child, scope: toScope, scheduledDate: null, shownCount: 0 });
+								i = j;
+							}
+						} else {
+							// Not demoted yet — keep it here, just bump the shown count.
+							kept.push({ ...t, shownCount: newCount });
+						}
+					} else {
+						kept.push(t);
 					}
-					return true;
-				});
-				todosData.tasks[toScope].push(...moved);
+				}
+				todosData.tasks[fromScope] = kept;
+				todosData.tasks[toScope].push(...demoted);
 			}
 
 			await app.vault.modify(todosFile, serialiseTodos(todosData));

@@ -15,6 +15,13 @@ export interface Task {
 	indent: number;
 	/** For scheduled tasks: the target date as DD-MM-YYYY (null for other scopes). */
 	scheduledDate: string | null;
+	/**
+	 * How many times this task has already been surfaced in a daily note
+	 * since it last moved into its current scope. Used together with
+	 * `showsBeforeDemotion` to decide when a week/month/year task gets
+	 * pulled down a scope (e.g. week -> day). Always 0 for day/scheduled tasks.
+	 */
+	shownCount: number;
 }
 
 /** Parsed contents of TODOs.md. */

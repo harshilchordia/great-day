@@ -10,6 +10,13 @@ export interface GreatDaySettings {
 	addTasksHeading: string;
 	chillWeekends: boolean;
 	icsCalendarUrl: string;
+	/**
+	 * How many times a week/month/year task must be surfaced in a daily note
+	 * before it gets demoted to the next scope down (week -> day, month ->
+	 * week, year -> month). 1 preserves the original behaviour (demote the
+	 * first time it's shown).
+	 */
+	showsBeforeDemotion: number;
 }
 
 export const DEFAULT_SETTINGS: GreatDaySettings = {
@@ -21,6 +28,7 @@ export const DEFAULT_SETTINGS: GreatDaySettings = {
 	addTasksHeading: 'New tasks',
 	chillWeekends: true,
 	icsCalendarUrl: '',
+	showsBeforeDemotion: 1,
 };
 
 export class GreatDaySettingTab extends PluginSettingTab {
@@ -133,6 +141,20 @@ export class GreatDaySettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.icsCalendarUrl)
 					.onChange(async (value) => {
 						this.plugin.settings.icsCalendarUrl = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Shows before demotion')
+			.setDesc('How many times a week/month/year task must appear in a daily note before it gets pulled down a scope (week → day, month → week, year → month). Set to 1 for the original behaviour (demote as soon as it\'s shown once). Higher values let a task keep reappearing at its current scope for longer before it becomes a day-to-day task.')
+			.addText((text) =>
+				text
+					.setPlaceholder('1')
+					.setValue(String(this.plugin.settings.showsBeforeDemotion))
+					.onChange(async (value) => {
+						const parsed = parseInt(value, 10);
+						this.plugin.settings.showsBeforeDemotion = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
 						await this.plugin.saveSettings();
 					}),
 			);
