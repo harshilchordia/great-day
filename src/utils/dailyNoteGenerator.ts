@@ -10,7 +10,7 @@ import {
 } from './todosParser';
 import { sampleForScope } from './taskSampler';
 import { parseIcsForDate, type CalendarEvent } from './icsParser';
-import { syncPreviousNotes } from './rollover';
+import { syncPreviousNotes, convertOverdueScheduled } from './rollover';
 import { dayLong, formatDate } from './dateUtils';
 
 /** Resolves {{year}} in a folder path to the current year. */
@@ -120,6 +120,12 @@ export async function generateDailyNoteContent(
 	const fullDayName = dayLong(date);
 	const dateTag = date.format('DD-MM-YYYY');
 
+	// Promote any scheduled tasks that have come due into day tasks before we
+	// pick what to surface. Rollover normally does this, but it only runs when
+	// there's an unsynced previous note — doing it here means a task scheduled
+	// for today shows up even on a first run or after a gap in daily notes.
+	convertOverdueScheduled(data, dateTag);
+
 	const lines: string[] = [];
 	const chillWeekend = settings.chillWeekends && isWeekend(date);
 
@@ -184,13 +190,19 @@ export async function generateDailyNoteContent(
 	// been surfaced `settings.showsBeforeDemotion` times. Until that threshold
 	// is reached, the task stays in its current scope with its shown-count
 	// incremented, so it can keep reappearing before being pulled down.
-	if (!chillWeekend) {
+	//
+	// This runs on chill weekends too: nothing was sampled then, so the demote
+	// loops no-op, but the write still persists any newly-due scheduled tasks.
+	{
 		const todosFile = app.vault.getAbstractFileByPath(
 			normalizePath(settings.todosFilePath),
 		);
 		if (todosFile && todosFile instanceof TFile) {
-			const todosRaw = await app.vault.read(todosFile);
-			const todosData = parseTodos(todosRaw);
+			// Mutate the same `data` we parsed above rather than re-reading the
+			// file. Rollover has already written its appended tasks into TODOs.md,
+			// and a fresh read here can return Obsidian's pre-sync cached content —
+			// serialising that would clobber those newly added tasks.
+			const todosData = data;
 			const threshold = Math.max(1, settings.showsBeforeDemotion);
 
 			const demoteMap: Record<string, TaskScope> = {

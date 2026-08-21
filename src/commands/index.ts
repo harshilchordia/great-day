@@ -38,7 +38,8 @@ export function registerCommands(plugin: GreatDayPlugin): void {
 		name: 'Manually sync previous day',
 		callback: async () => {
 			const yesterday = moment().subtract(1, 'day');
-			const result = await syncRollover(plugin.app, plugin.settings, yesterday);
+			// Scheduled tasks are judged due against today, not the synced note's date.
+			const result = await syncRollover(plugin.app, plugin.settings, yesterday, moment());
 			const totalAppended =
 				result.appended.day.length +
 				result.appended.week.length +

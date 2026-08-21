@@ -4,7 +4,7 @@ import type { Task, TaskScope, TodosData } from '../types';
 const TASK_RE = /^(\s*)- \[([ xX])\] (.*)$/;
 
 /** Matches scope tags in task text: (D), (W), (M), (Y). */
-const TAG_RE = /\(([DWdwmM])\)\s*$/;
+const TAG_RE = /\(([DWMYdwmy])\)\s*$/;
 
 /** Matches date tags in task text: (DD-MM-YYYY). */
 const DATE_TAG_RE = /\((\d{2}-\d{2}-\d{4})\)\s*$/;

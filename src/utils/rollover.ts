@@ -103,10 +103,14 @@ function parseDailyNote(
 					inTasksSection = true;
 				}
 			}
-		} else {
-			if (inTasksSection && trimmedLower === '') {
-				inTasksSection = false;
-			}
+		} else if (trimmedLower === '---') {
+			// A horizontal rule ends the generated template block. Everything
+			// below it is freeform daily writing, which may contain its own
+			// headings and checkboxes that must not be treated as tasks.
+			inTasksSection = false;
+			inNewTasksSection = false;
+		} else if (inTasksSection && trimmedLower === '') {
+			inTasksSection = false;
 		}
 	}
 
@@ -118,24 +122,39 @@ export function isNoteSynced(content: string): boolean {
 	return content.includes(SYNCED_MARKER);
 }
 
-/** Converts overdue scheduled tasks to day tasks. */
-function convertOverdueScheduled(data: ReturnType<typeof parseTodos>, todayDateTag: string): void {
-	const overdue: Task[] = [];
+/**
+ * Converts due scheduled tasks into day tasks.
+ *
+ * A scheduled task becomes a `(D)` task once its date has arrived — on the day
+ * itself, not the day after. From then on it lives in `# Day` and so reappears
+ * in every daily note until it's ticked off.
+ *
+ * `dueDateTag` is the date of the note being *generated* (i.e. today), not the
+ * date of whichever older note is currently being synced — otherwise a task
+ * scheduled for day N is compared against day N and never comes due.
+ */
+export function convertOverdueScheduled(
+	data: ReturnType<typeof parseTodos>,
+	dueDateTag: string,
+): void {
+	const due: Task[] = [];
 	const remaining: Task[] = [];
+	const dueBy = moment(dueDateTag, 'DD-MM-YYYY');
 	for (const task of data.tasks.scheduled) {
-		if (!task.done && task.scheduledDate && task.scheduledDate !== todayDateTag) {
-			// Check if the date is in the past
+		if (!task.done && task.scheduledDate) {
 			const taskDate = moment(task.scheduledDate, 'DD-MM-YYYY');
-			const today = moment(todayDateTag, 'DD-MM-YYYY');
-			if (taskDate.isBefore(today)) {
-				overdue.push({ ...task, scope: 'day', scheduledDate: null });
+			if (taskDate.isValid() && taskDate.isSameOrBefore(dueBy, 'day')) {
+				// Avoid creating a duplicate if an identical day task already exists.
+				if (!data.tasks.day.some((t) => t.text === task.text)) {
+					due.push({ ...task, scope: 'day', scheduledDate: null });
+				}
 				continue;
 			}
 		}
 		remaining.push(task);
 	}
 	data.tasks.scheduled = remaining;
-	data.tasks.day.push(...overdue);
+	data.tasks.day.push(...due);
 }
 
 /**
@@ -149,6 +168,11 @@ export async function syncRollover(
 	app: App,
 	settings: GreatDaySettings,
 	noteDate: moment.Moment,
+	/**
+	 * Date to judge scheduled tasks against — the note being generated (today).
+	 * Defaults to `noteDate` for standalone calls that sync a single note.
+	 */
+	dueDate: moment.Moment = noteDate,
 ): Promise<SyncResult> {
 	const dailyFile = getDailyNoteFile(app, settings, noteDate);
 	if (!dailyFile) {
@@ -173,8 +197,8 @@ export async function syncRollover(
 	const todosRaw = await app.vault.read(todosFile);
 	const data = parseTodos(todosRaw);
 
-	// Convert overdue scheduled tasks to day
-	convertOverdueScheduled(data, noteDate.format('DD-MM-YYYY'));
+	// Promote scheduled tasks that have come due (relative to today) to day tasks
+	convertOverdueScheduled(data, dueDate.format('DD-MM-YYYY'));
 
 	const result: SyncResult = {
 		rolledBack: [],
@@ -298,7 +322,7 @@ export async function syncPreviousNotes(
 		const content = await app.vault.read(file);
 		if (isNoteSynced(content)) break;
 
-		const result = await syncRollover(app, settings, checkDate);
+		const result = await syncRollover(app, settings, checkDate, targetDate);
 		combined.rolledBack.push(...result.rolledBack);
 		combined.completed.push(...result.completed);
 		combined.appended.day.push(...result.appended.day);
