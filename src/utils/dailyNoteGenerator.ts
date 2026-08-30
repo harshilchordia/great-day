@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import { TFile, Notice, normalizePath, moment, requestUrl } from 'obsidian';
 import type { GreatDaySettings } from '../settings';
-import type { Task, TaskScope } from '../types';
+import type { Task, TaskScope, TodosData } from '../types';
 import {
 	parseTodos,
 	getExerciseForDay,
@@ -112,11 +112,23 @@ export async function generateDailyNoteContent(
 	app: App,
 	settings: GreatDaySettings,
 	date: moment.Moment,
+	/**
+	 * TODOs state as just written by rollover, when a sync ran immediately before
+	 * this call. Passing it avoids re-reading the file: `Vault.read` can return
+	 * Obsidian's cached pre-write content, and the demote pass below rewrites the
+	 * file from whatever it parsed — so a stale read here silently erases the
+	 * tasks the sync had appended moments earlier.
+	 */
+	syncedTodos: TodosData | null = null,
 ): Promise<string> {
-	const raw = await readTodosFile(app, settings);
-	if (!raw) return '';
-
-	const data = parseTodos(raw);
+	let data: TodosData;
+	if (syncedTodos) {
+		data = syncedTodos;
+	} else {
+		const raw = await readTodosFile(app, settings);
+		if (!raw) return '';
+		data = parseTodos(raw);
+	}
 	const fullDayName = dayLong(date);
 	const dateTag = date.format('DD-MM-YYYY');
 
@@ -309,8 +321,9 @@ export async function createDailyNote(
 		await app.vault.create(folder + '/.gitkeep', '');
 	}
 
-	// Generate content (re-reads TODOs after sync)
-	const content = await generateDailyNoteContent(app, settings, date);
+	// Generate content from the state rollover just wrote, rather than re-reading
+	// the file (see the `syncedTodos` parameter for why that read is unsafe).
+	const content = await generateDailyNoteContent(app, settings, date, syncResult.todos);
 	const file = await app.vault.create(filePath, content);
 	await app.workspace.openLinkText(filePath, '', false);
 	return file;

@@ -185,7 +185,7 @@ export async function syncRollover(
 ): Promise<SyncResult> {
 	const dailyFile = getDailyNoteFile(app, settings, noteDate);
 	if (!dailyFile) {
-		return { rolledBack: [], completed: [], appended: { day: [], week: [], month: [], year: [], scheduled: [] } };
+		return { rolledBack: [], completed: [], appended: { day: [], week: [], month: [], year: [], scheduled: [] }, todos: null };
 	}
 
 	const dailyContent = await app.vault.read(dailyFile);
@@ -200,7 +200,7 @@ export async function syncRollover(
 	);
 	if (!todosFile || !(todosFile instanceof TFile)) {
 		new Notice('Great day: todos file not found for rollover sync.');
-		return { rolledBack: [], completed: [], appended: { day: [], week: [], month: [], year: [], scheduled: [] } };
+		return { rolledBack: [], completed: [], appended: { day: [], week: [], month: [], year: [], scheduled: [] }, todos: null };
 	}
 
 	const todosRaw = await app.vault.read(todosFile);
@@ -213,6 +213,7 @@ export async function syncRollover(
 		rolledBack: [],
 		completed: [],
 		appended: { day: [], week: [], month: [], year: [], scheduled: [] },
+		todos: null,
 	};
 
 	// Collect completed task texts (use clean text without tags)
@@ -290,9 +291,13 @@ export async function syncRollover(
 		}
 	}
 
-	// Write back TODOs
+	// Write back TODOs, and hand the in-memory state to the caller. Anything that
+	// keeps working with TODOs after this point must use `result.todos`: reading
+	// the file back can return Obsidian's cached pre-write content, and
+	// serialising that stale copy would erase the tasks just appended above.
 	const newTodos = serialiseTodos(data);
 	await app.vault.modify(todosFile, newTodos);
+	result.todos = data;
 
 	// Mark the daily note as synced. Strip *every* existing marker, not just the
 	// first: a string argument to `replace` only swaps one occurrence, so repeat
@@ -324,6 +329,7 @@ export async function syncPreviousNotes(
 		rolledBack: [],
 		completed: [],
 		appended: { day: [], week: [], month: [], year: [], scheduled: [] },
+		todos: null,
 	};
 
 	// Walk the whole window rather than stopping at the first synced note. A note
@@ -344,6 +350,9 @@ export async function syncPreviousNotes(
 		combined.appended.month.push(...result.appended.month);
 		combined.appended.year.push(...result.appended.year);
 		combined.appended.scheduled.push(...result.appended.scheduled);
+		// Each syncRollover re-reads and rewrites the whole file, so the most
+		// recent successful write is the authoritative state to hand upstream.
+		if (result.todos) combined.todos = result.todos;
 	}
 
 	return combined;

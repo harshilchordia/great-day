@@ -52,4 +52,13 @@ export interface SyncResult {
 	completed: string[];
 	/** New tasks appended to TODOs (had scope tags). */
 	appended: Record<TaskScope, string[]>;
+	/**
+	 * The TODOs state as written by the sync, or null if nothing was synced.
+	 *
+	 * Callers that need to keep working with TODOs *must* use this rather than
+	 * re-reading the file: `Vault.read` can still return Obsidian's cached
+	 * pre-write content immediately after `Vault.modify`, and serialising that
+	 * stale copy silently erases whatever the sync just appended.
+	 */
+	todos: TodosData | null;
 }
