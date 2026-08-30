@@ -52,6 +52,11 @@ function extractOrigin(text: string): { scope: TaskScope; date: string | null; c
 	return { scope: 'day', date: null, cleanText: text };
 }
 
+/** Normalises a heading for comparison: lowercased, trimmed, no trailing colon. */
+function normaliseHeading(text: string): string {
+	return text.trim().toLowerCase().replace(/[:\s]+$/, '');
+}
+
 /** Parses a daily note's content into pulled tasks and new tasks. */
 function parseDailyNote(
 	content: string,
@@ -69,8 +74,12 @@ function parseDailyNote(
 		const headingMatch = trimmedLower.match(/^#+\s+(.+)$/);
 
 		if (headingMatch) {
-			const headingText = headingMatch[1] ?? '';
-			inNewTasksSection = headingText === settings.addTasksHeading.toLowerCase();
+			// Match on the heading text alone, at any heading level, ignoring
+			// surrounding whitespace and trailing punctuation. Obsidian Linter and
+			// similar tools rewrite heading levels, and a stray trailing space
+			// would otherwise silently stop new tasks from being collected.
+			const headingText = normaliseHeading(headingMatch[1] ?? '');
+			inNewTasksSection = headingText === normaliseHeading(settings.addTasksHeading);
 			inTasksSection = false;
 			continue;
 		}
@@ -285,8 +294,11 @@ export async function syncRollover(
 	const newTodos = serialiseTodos(data);
 	await app.vault.modify(todosFile, newTodos);
 
-	// Mark the daily note as synced (replace existing marker if present)
-	let updatedContent = dailyContent.replace(SYNCED_MARKER, '').trimEnd();
+	// Mark the daily note as synced. Strip *every* existing marker, not just the
+	// first: a string argument to `replace` only swaps one occurrence, so repeat
+	// syncs used to leave stale markers stranded mid-note (sometimes inside the
+	// new-tasks section, splitting it in two).
+	let updatedContent = dailyContent.split(SYNCED_MARKER).join('').trimEnd();
 	updatedContent += '\n\n' + SYNCED_MARKER + '\n';
 	await app.vault.modify(dailyFile, updatedContent);
 
@@ -314,13 +326,15 @@ export async function syncPreviousNotes(
 		appended: { day: [], week: [], month: [], year: [], scheduled: [] },
 	};
 
+	// Walk the whole window rather than stopping at the first synced note. A note
+	// is stamped synced the day *after* it was written, so new tasks added to it
+	// later — or notes sitting behind a gap of skipped days — would otherwise be
+	// abandoned permanently. Re-syncing is idempotent: `syncRollover` guards every
+	// append against a task of the same text already existing in TODOs.
 	for (let i = 1; i <= 30; i++) {
 		const checkDate = targetDate.clone().subtract(i, 'day');
 		const file = getDailyNoteFile(app, settings, checkDate);
 		if (!file) continue;
-
-		const content = await app.vault.read(file);
-		if (isNoteSynced(content)) break;
 
 		const result = await syncRollover(app, settings, checkDate, targetDate);
 		combined.rolledBack.push(...result.rolledBack);

@@ -255,7 +255,21 @@ function buildTaskLine(task: Task): string {
 		suffix = ` (${task.scheduledDate})`;
 	}
 	const shownMarker = task.shownCount > 0 ? ` <!--shown:${task.shownCount}-->` : '';
-	return `${indent}${checkbox} ${task.text}${suffix}${shownMarker}`;
+	return `${indent}${checkbox} ${sanitiseTaskText(task.text)}${suffix}${shownMarker}`;
+}
+
+/**
+ * Flattens anything in a task's text that would break the one-task-per-line
+ * invariant. Embedded newlines (or a checkbox marker smuggled into the middle of
+ * the text) would otherwise serialise as two fused tasks on a single line, which
+ * the next parse reads back as one task with the second one's text glued on.
+ */
+function sanitiseTaskText(text: string): string {
+	return text
+		.replace(/[\r\n]+/g, ' ')
+		.replace(/\s*-\s\[[ xX]\]\s*/g, ' ')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
 }
 
 /** Serialises TodosData back into file text. */
@@ -280,12 +294,18 @@ export function serialiseTodos(data: TodosData): string {
 		scheduled: '# Scheduled',
 	};
 
+	// Always emit every scope heading, even when the list is empty. Dropping an
+	// empty section would delete the heading from the file, and a missing
+	// `# Scheduled` leaves date-tagged tasks with nowhere to land on the next
+	// parse — silently breaking date tags once the section drains.
 	for (const scope of ['day', 'week', 'month', 'year', 'scheduled'] as TaskScope[]) {
 		const scopeTasks = data.tasks[scope];
-		if (scopeTasks.length > 0) {
-			const taskLines = scopeTasks.map((t) => buildTaskLine(t));
-			sections.push(scopeHeading[scope] + '\n' + taskLines.join('\n'));
-		}
+		const taskLines = scopeTasks.map((t) => buildTaskLine(t));
+		sections.push(
+			taskLines.length > 0
+				? scopeHeading[scope] + '\n' + taskLines.join('\n')
+				: scopeHeading[scope],
+		);
 	}
 
 	return sections.join('\n\n') + '\n';
