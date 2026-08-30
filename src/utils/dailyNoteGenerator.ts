@@ -211,6 +211,11 @@ export async function generateDailyNoteContent(
 				year: 'month',
 			};
 
+			// Tasks demoted during this pass, tracked by text so that a task moved
+			// out of `year` into `month` can't be demoted a second time when the
+			// `month` bucket is processed. Demotion is one scope per day, always.
+			const demotedThisRun = new Set<string>();
+
 			for (const [fromScope, toScope] of Object.entries(demoteMap) as [TaskScope, TaskScope][]) {
 				const shownTaskList = fromScope === 'week' ? weekTasks : fromScope === 'month' ? monthTasks : yearTasks;
 				if (shownTaskList.length === 0) continue;
@@ -222,10 +227,11 @@ export async function generateDailyNoteContent(
 				for (let i = 0; i < source.length; i++) {
 					const t = source[i];
 					if (!t) continue;
-					if (t.indent === 0 && shownTexts.has(t.text)) {
+					if (t.indent === 0 && shownTexts.has(t.text) && !demotedThisRun.has(t.text)) {
 						const newCount = t.shownCount + 1;
 						if (newCount >= threshold) {
 							// Demote this task and pull its children along with it.
+							demotedThisRun.add(t.text);
 							demoted.push({ ...t, scope: toScope, scheduledDate: null, shownCount: 0 });
 							for (let j = i + 1; j < source.length; j++) {
 								const child = source[j];

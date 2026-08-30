@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: GreatDaySettings = {
 	addTasksHeading: 'New tasks',
 	chillWeekends: true,
 	icsCalendarUrl: '',
-	showsBeforeDemotion: 1,
+	showsBeforeDemotion: 3,
 };
 
 export class GreatDaySettingTab extends PluginSettingTab {
