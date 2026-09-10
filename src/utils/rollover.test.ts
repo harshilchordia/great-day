@@ -46,6 +46,33 @@ function appendNewTask(data: TodosData, rawText: string): void {
 }
 
 /**
+ * Appends a batch of tagged new tasks the way the fixed syncRollover does:
+ * (D) tasks are collected and prepended to the day list as a batch so the most
+ * recently added ones surface at the top, while other scopes are appended.
+ */
+function appendNewTasksBatch(data: TodosData, rawTexts: string[]): void {
+	const newDayTasks: TodosData['tasks']['day'] = [];
+	for (const rawText of rawTexts) {
+		const tag = extractNewTaskTag(rawText);
+		if (!tag) continue;
+		const text = stripTag(rawText);
+		if (data.tasks[tag.scope].some((t) => t.text === text)) continue;
+		const task = {
+			raw: `- [ ] ${text}`,
+			text,
+			done: false,
+			scope: tag.scope,
+			indent: 0,
+			scheduledDate: null,
+			shownCount: 0,
+		};
+		if (tag.scope === 'day') newDayTasks.push(task);
+		else data.tasks[tag.scope].push(task);
+	}
+	if (newDayTasks.length > 0) data.tasks.day.unshift(...newDayTasks);
+}
+
+/**
  * A vault whose read returns the content as of the *previous* write, modelling
  * Obsidian serving a cached copy immediately after modify().
  */
@@ -121,6 +148,56 @@ test('all scope headings survive a round-trip even when empty', () => {
 	for (const heading of ['# Day', '# Week', '# Month', '# Year', '# Scheduled']) {
 		assert.ok(out.includes(heading), `${heading} must be preserved`);
 	}
+});
+
+test('syncing multiple notes in one batch keeps every appended task', () => {
+	// Models syncPreviousNotes threading one TodosData through several notes.
+	// The old code re-read the vault at the start of each sync (getting the stale
+	// pre-write copy) and let the last loop iteration's write win, so tasks
+	// appended for earlier-processed notes were dropped. Threading the same object
+	// forward — and writing once at the end — keeps them all.
+	const vault = new StaleVault(TODOS);
+
+	// Read the file exactly once, then thread the parsed object across notes.
+	const data = parseTodos(vault.read());
+	appendNewTask(data, 'task from older note (W)'); // note synced first
+	appendNewTask(data, 'task from newer note (W)'); // note synced second
+	vault.modify(serialiseTodos(data)); // single final write
+
+	assert.match(vault.settled(), /task from older note/, 'older note task kept');
+	assert.match(vault.settled(), /task from newer note/, 'newer note task kept');
+});
+
+test('re-reading the vault between note syncs is what dropped a task', () => {
+	// Documents the regression: parsing from a stale read between appends loses
+	// whatever the previous append added.
+	const vault = new StaleVault(TODOS);
+
+	const first = parseTodos(vault.read());
+	appendNewTask(first, 'task from older note (W)');
+	vault.modify(serialiseTodos(first));
+
+	// Buggy path: start the next note's sync by re-reading (stale) and appending
+	// to that, then write. The older note's task is gone.
+	const second = parseTodos(vault.read());
+	appendNewTask(second, 'task from newer note (W)');
+	vault.modify(serialiseTodos(second));
+
+	assert.doesNotMatch(vault.settled(), /task from older note/, 'stale re-read drops the earlier task');
+});
+
+test('newest (D) tasks land at the top of the day list', () => {
+	const data = parseTodos(TODOS);
+	assert.equal(data.tasks.day[0]?.text, 'existing day task', 'precondition');
+
+	appendNewTasksBatch(data, ['first new (D)', 'second new (D)']);
+
+	// The batch of new (D) tasks sits above the pre-existing day task, in the
+	// order they were written (the (D) tag is stripped from stored text).
+	assert.deepEqual(
+		data.tasks.day.map((t) => t.text),
+		['first new', 'second new', 'existing day task'],
+	);
 });
 
 test('serialising never fuses two tasks onto one line', () => {

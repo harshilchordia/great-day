@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: GreatDaySettings = {
 	weeklyReview: true,
 	weeklyReviewDay: 1,
 	addTasksHeading: 'New tasks',
-	chillWeekends: true,
+	chillWeekends: false,
 	icsCalendarUrl: '',
 	showsBeforeDemotion: 3,
 };

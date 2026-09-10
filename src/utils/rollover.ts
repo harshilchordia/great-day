@@ -182,6 +182,15 @@ export async function syncRollover(
 	 * Defaults to `noteDate` for standalone calls that sync a single note.
 	 */
 	dueDate: moment.Moment = noteDate,
+	/**
+	 * TODOs state carried over from a prior sync in the same batch. When passed,
+	 * it's used in place of reading the file: `Vault.read` can return Obsidian's
+	 * cached pre-write content right after the previous sync's `Vault.modify`, so
+	 * re-reading here would parse a snapshot missing what that sync just appended
+	 * and then write it back — erasing those tasks. Threading the in-memory state
+	 * removes the cache dependency. Standalone callers omit it and read the file.
+	 */
+	todosOverride: ReturnType<typeof parseTodos> | null = null,
 ): Promise<SyncResult> {
 	const dailyFile = getDailyNoteFile(app, settings, noteDate);
 	if (!dailyFile) {
@@ -203,8 +212,7 @@ export async function syncRollover(
 		return { rolledBack: [], completed: [], appended: { day: [], week: [], month: [], year: [], scheduled: [] }, todos: null };
 	}
 
-	const todosRaw = await app.vault.read(todosFile);
-	const data = parseTodos(todosRaw);
+	const data = todosOverride ?? parseTodos(await app.vault.read(todosFile));
 
 	// Promote scheduled tasks that have come due (relative to today) to day tasks
 	convertOverdueScheduled(data, dueDate.format('DD-MM-YYYY'));
@@ -247,6 +255,12 @@ export async function syncRollover(
 		);
 	}
 
+	// New (D) tasks are collected here and prepended to the day list as a batch
+	// once all new tasks are processed, so the most recently added tasks surface
+	// at the *top* of the next daily note. Collecting first (rather than
+	// unshifting one at a time) preserves the order they were written in.
+	const newDayTasks: Task[] = [];
+
 	// Process new tasks
 	for (const task of parsed.newTasks) {
 		if (task.done) continue;
@@ -277,7 +291,7 @@ export async function syncRollover(
 		if (tagResult) {
 			const cleanText = stripTag(task.text);
 			if (!data.tasks[tagResult.scope].some(t => t.text === cleanText)) {
-				data.tasks[tagResult.scope].push({
+				const newTask: Task = {
 					raw: `- [ ] ${cleanText}`,
 					text: cleanText,
 					done: false,
@@ -285,10 +299,23 @@ export async function syncRollover(
 					indent: 0,
 					scheduledDate: null,
 					shownCount: 0,
-				});
+				};
+				if (tagResult.scope === 'day') {
+					// Defer to the batch prepend below so newest lands on top.
+					newDayTasks.push(newTask);
+				} else {
+					data.tasks[tagResult.scope].push(newTask);
+				}
 				result.appended[tagResult.scope].push(cleanText);
 			}
 		}
+	}
+
+	// Prepend the batch of new (D) tasks so the most recently added tasks appear
+	// at the top of the day list (and therefore the top of the next daily note),
+	// above tasks carried over from previous days.
+	if (newDayTasks.length > 0) {
+		data.tasks.day.unshift(...newDayTasks);
 	}
 
 	// Write back TODOs, and hand the in-memory state to the caller. Anything that
@@ -337,12 +364,22 @@ export async function syncPreviousNotes(
 	// later — or notes sitting behind a gap of skipped days — would otherwise be
 	// abandoned permanently. Re-syncing is idempotent: `syncRollover` guards every
 	// append against a task of the same text already existing in TODOs.
-	for (let i = 1; i <= 30; i++) {
+	//
+	// Sync oldest -> newest and thread the in-memory TODOs state from one sync
+	// into the next. Two reasons:
+	//   1. Reading the file at the start of each sync can return Obsidian's cached
+	//      pre-write copy from the previous sync's write, so a re-read would parse
+	//      a snapshot missing what was just appended and then overwrite it.
+	//   2. `combined.todos` (handed to note generation, which rewrites TODOs from
+	//      it) must be the *final* state after every note is processed. Ending on
+	//      the newest note makes the last write the most complete one.
+	let carried: ReturnType<typeof parseTodos> | null = null;
+	for (let i = 30; i >= 1; i--) {
 		const checkDate = targetDate.clone().subtract(i, 'day');
 		const file = getDailyNoteFile(app, settings, checkDate);
 		if (!file) continue;
 
-		const result = await syncRollover(app, settings, checkDate, targetDate);
+		const result = await syncRollover(app, settings, checkDate, targetDate, carried);
 		combined.rolledBack.push(...result.rolledBack);
 		combined.completed.push(...result.completed);
 		combined.appended.day.push(...result.appended.day);
@@ -350,9 +387,10 @@ export async function syncPreviousNotes(
 		combined.appended.month.push(...result.appended.month);
 		combined.appended.year.push(...result.appended.year);
 		combined.appended.scheduled.push(...result.appended.scheduled);
-		// Each syncRollover re-reads and rewrites the whole file, so the most
-		// recent successful write is the authoritative state to hand upstream.
-		if (result.todos) combined.todos = result.todos;
+		if (result.todos) {
+			carried = result.todos;
+			combined.todos = result.todos;
+		}
 	}
 
 	return combined;
