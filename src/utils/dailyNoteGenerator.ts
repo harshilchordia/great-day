@@ -80,7 +80,7 @@ function formatEvents(events: CalendarEvent[]): string[] {
 
 /** Returns the urgency tag suffix for a task scope. */
 function urgencySuffix(scope: TaskScope, scheduledDate: string | null): string {
-	if (scope === 'scheduled' && scheduledDate) {
+	if (scheduledDate) {
 		return ` (${scheduledDate})`;
 	}
 	const tagMap: Record<TaskScope, string> = {

@@ -11,7 +11,13 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTodos, serialiseTodos, extractNewTaskTag, stripTag } from './todosParser.ts';
+import {
+	parseTodos,
+	serialiseTodos,
+	extractNewTaskTag,
+	stripTag,
+	parseTaggedTask,
+} from './todosParser.ts';
 import type { TodosData } from '../types.ts';
 
 const TODOS = [
@@ -27,6 +33,37 @@ const TODOS = [
 	'# Scheduled',
 	'',
 ].join('\n');
+
+test('new task tags are classified before their suffix is stripped', () => {
+	assert.deepEqual(parseTaggedTask('schedule task for today (17-09-2026)'), {
+		text: 'schedule task for today',
+		scope: 'scheduled',
+		scheduledDate: '17-09-2026',
+	});
+	assert.deepEqual(parseTaggedTask('buy groceries (D)'), {
+		text: 'buy groceries',
+		scope: 'day',
+		scheduledDate: null,
+	});
+	assert.equal(parseTaggedTask('task without a tag'), null);
+});
+
+test('a promoted day task keeps its original scheduled date', () => {
+	const data = parseTodos(TODOS);
+	data.tasks.day.push({
+		raw: '- [ ] scheduled reminder (17-09-2026)',
+		text: 'scheduled reminder',
+		done: false,
+		scope: 'day',
+		indent: 0,
+		scheduledDate: '17-09-2026',
+		shownCount: 0,
+	});
+
+	const serialised = serialiseTodos(data);
+	assert.match(serialised, /# Day\n[\s\S]*scheduled reminder \(17-09-2026\)/);
+	assert.equal(parseTodos(serialised).tasks.day.at(-1)?.scheduledDate, '17-09-2026');
+});
 
 /** Appends a tagged new task the way syncRollover does. */
 function appendNewTask(data: TodosData, rawText: string): void {

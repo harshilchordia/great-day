@@ -144,7 +144,7 @@ export function parseTodos(raw: string): TodosData {
 			let cleanText = stripScopeTag(rawText);
 			const shownCount = extractShownCount(cleanText);
 			cleanText = stripShownCount(cleanText);
-			const scheduledDate = currentSection === 'scheduled' ? extractDateTag(cleanText) : null;
+			const scheduledDate = extractDateTag(cleanText);
 			cleanText = scheduledDate ? stripDateTag(cleanText) : cleanText;
 			tasks[currentSection].push({
 				raw: line,
@@ -241,6 +241,30 @@ export function extractNewTaskTag(text: string): { tag: string; scope: TaskScope
 	return { tag: match[0], scope };
 }
 
+/** Parses a date or scope suffix from a newly entered task. */
+export function parseTaggedTask(text: string): {
+	text: string;
+	scope: TaskScope;
+	scheduledDate: string | null;
+} | null {
+	const scheduledDate = extractDateTag(text);
+	if (scheduledDate) {
+		return {
+			text: stripDateTag(text),
+			scope: 'scheduled',
+			scheduledDate,
+		};
+	}
+
+	const tag = extractNewTaskTag(text);
+	if (!tag) return null;
+	return {
+		text: stripTag(text),
+		scope: tag.scope,
+		scheduledDate: null,
+	};
+}
+
 /** Removes the scope tag from task text. */
 export function stripTag(text: string): string {
 	return text.replace(TAG_RE, '').trimEnd();
@@ -251,7 +275,7 @@ function buildTaskLine(task: Task): string {
 	const indent = '\t'.repeat(task.indent);
 	const checkbox = task.done ? '- [x]' : '- [ ]';
 	let suffix = '';
-	if (task.scope === 'scheduled' && task.scheduledDate) {
+	if (task.scheduledDate) {
 		suffix = ` (${task.scheduledDate})`;
 	}
 	const shownMarker = task.shownCount > 0 ? ` <!--shown:${task.shownCount}-->` : '';
