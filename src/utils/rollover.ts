@@ -98,6 +98,7 @@ function parseDailyNote(
 				raw: line,
 				done: doneChar.toLowerCase() === 'x',
 				text: origin.cleanText,
+				sourceText: text,
 				indent,
 				originScope: origin.scope,
 				originDate: origin.date,
@@ -266,49 +267,44 @@ export async function syncRollover(
 	// Process new tasks
 	for (const task of parsed.newTasks) {
 		if (task.done) continue;
-		if (!task.text.trim()) continue;
+		const taggedTask = parseTaggedTask(task.sourceText);
+		if (!taggedTask?.text.trim()) continue;
 
-		// Check for date tag first (DD-MM-YYYY)
-		const dateTag = extractDateTag(task.text);
-		if (dateTag) {
-			const cleanText = stripDateTag(task.text);
+		if (taggedTask.scope === 'scheduled' && taggedTask.scheduledDate) {
 			// Avoid duplicates
-			if (!data.tasks.scheduled.some(t => t.text === cleanText && t.scheduledDate === dateTag)) {
+			if (!data.tasks.scheduled.some(t => t.text === taggedTask.text && t.scheduledDate === taggedTask.scheduledDate)) {
 				data.tasks.scheduled.push({
-					raw: `- [ ] ${cleanText} (${dateTag})`,
-					text: cleanText,
+					raw: `- [ ] ${taggedTask.text} (${taggedTask.scheduledDate})`,
+					text: taggedTask.text,
 					done: false,
 					scope: 'scheduled',
 					indent: 0,
-					scheduledDate: dateTag,
+					scheduledDate: taggedTask.scheduledDate,
 					shownCount: 0,
 				});
-				result.appended.scheduled.push(cleanText);
+				result.appended.scheduled.push(taggedTask.text);
 			}
 			continue;
 		}
 
-		// Check for scope tag (D/W/M/Y)
-		const tagResult = extractNewTaskTag(task.text);
-		if (tagResult) {
-			const cleanText = stripTag(task.text);
-			if (!data.tasks[tagResult.scope].some(t => t.text === cleanText)) {
+		if (taggedTask.scope !== 'scheduled') {
+			if (!data.tasks[taggedTask.scope].some(t => t.text === taggedTask.text)) {
 				const newTask: Task = {
-					raw: `- [ ] ${cleanText}`,
-					text: cleanText,
+					raw: `- [ ] ${taggedTask.text}`,
+					text: taggedTask.text,
 					done: false,
-					scope: tagResult.scope,
+					scope: taggedTask.scope,
 					indent: 0,
 					scheduledDate: null,
 					shownCount: 0,
 				};
-				if (tagResult.scope === 'day') {
+				if (taggedTask.scope === 'day') {
 					// Defer to the batch prepend below so newest lands on top.
 					newDayTasks.push(newTask);
 				} else {
-					data.tasks[tagResult.scope].push(newTask);
+					data.tasks[taggedTask.scope].push(newTask);
 				}
-				result.appended[tagResult.scope].push(cleanText);
+				result.appended[taggedTask.scope].push(taggedTask.text);
 			}
 		}
 	}

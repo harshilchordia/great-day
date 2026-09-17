@@ -144,7 +144,7 @@ export function parseTodos(raw: string): TodosData {
 			let cleanText = stripScopeTag(rawText);
 			const shownCount = extractShownCount(cleanText);
 			cleanText = stripShownCount(cleanText);
-			const scheduledDate = currentSection === 'scheduled' ? extractDateTag(cleanText) : null;
+			const scheduledDate = extractDateTag(cleanText);
 			cleanText = scheduledDate ? stripDateTag(cleanText) : cleanText;
 			tasks[currentSection].push({
 				raw: line,
@@ -275,7 +275,7 @@ function buildTaskLine(task: Task): string {
 	const indent = '\t'.repeat(task.indent);
 	const checkbox = task.done ? '- [x]' : '- [ ]';
 	let suffix = '';
-	if (task.scope === 'scheduled' && task.scheduledDate) {
+	if (task.scheduledDate) {
 		suffix = ` (${task.scheduledDate})`;
 	}
 	const shownMarker = task.shownCount > 0 ? ` <!--shown:${task.shownCount}-->` : '';
