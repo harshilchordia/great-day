@@ -23,7 +23,7 @@ export function selectPendingDateStrings(
 ): string[] {
 	return candidateDates
 		.filter((date) => date < targetDate)
-		.filter((date) => !lastSuccessfulSyncDate || date > lastSuccessfulSyncDate)
+		.filter((date) => !lastSuccessfulSyncDate || date >= lastSuccessfulSyncDate)
 		.sort((left, right) => left.localeCompare(right));
 }
 

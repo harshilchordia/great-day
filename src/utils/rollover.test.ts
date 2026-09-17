@@ -159,7 +159,7 @@ test('pending note discovery is not limited to the previous 30 days', () => {
 			'2026-09-17',
 			'2026-06-01',
 		),
-		['2026-09-16'],
+		['2026-06-01', '2026-09-16'],
 	);
 });
 
