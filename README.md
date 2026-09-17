@@ -40,7 +40,7 @@ If you tick off a new task on the same day, it won't be added to TODOs at all.
 
 At midnight (or when you run **End day**), the plugin syncs the daily note. Obsidian must be running for the midnight check; if it was closed, the plugin catches up on pending notes the next time it loads.
 
-- **Checked tasks** → removed from TODOs (including sub-tasks)
+- **Checked tasks** → moved with their sub-tasks to **# Completed**, preserving their original scope or scheduled date and recording the completion date
 - **Unchecked tasks** → stay in TODOs (automatically rolled back)
 - **New tagged tasks** → appended to the appropriate TODOs section
 - **New date-tagged tasks** → appended to **# Scheduled** in TODOs
@@ -74,6 +74,9 @@ Sunday:
 
 # Scheduled
 - [ ] task (DD-MM-YYYY)
+
+# Completed
+- [x] completed day task (D) (completed DD-MM-YYYY)
 ```
 
 ## Settings

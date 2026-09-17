@@ -106,10 +106,42 @@ test('completing a task preserves duplicates from other scopes and dates', () =>
 		text: 'Call Alex',
 		scope: 'day',
 		scheduledDate: null,
-	}]), ['Call Alex']);
+	}], '17-09-2026'), ['Call Alex']);
 	assert.deepEqual(data.tasks.day, []);
 	assert.equal(data.tasks.week[0]?.text, 'Call Alex');
 	assert.equal(data.tasks.scheduled[0]?.scheduledDate, '20-09-2026');
+});
+
+test('completed tasks and their children move to a dated completed archive', () => {
+	const data = parseTodos([
+		'# Day',
+		'- [ ] Call Alex',
+		'\t- [ ] Prepare notes',
+		'',
+		'# Week',
+		'',
+		'# Month',
+		'',
+		'# Year',
+		'',
+		'# Scheduled',
+	].join('\n'));
+
+	removeCompletedTasks(data, [{
+		text: 'Call Alex',
+		scope: 'day',
+		scheduledDate: null,
+	}], '17-09-2026');
+
+	const serialised = serialiseTodos(data);
+	assert.match(
+		serialised,
+		/# Completed\n- \[x\] Call Alex \(D\) \(completed 17-09-2026\)\n\t- \[x\] Prepare notes/,
+	);
+	const reparsed = parseTodos(serialised);
+	assert.equal(reparsed.completedTasks[0]?.scope, 'day');
+	assert.equal(reparsed.completedTasks[0]?.completedDate, '17-09-2026');
+	assert.equal(reparsed.completedTasks[1]?.text, 'Prepare notes');
 });
 
 test('pending note discovery is not limited to the previous 30 days', () => {

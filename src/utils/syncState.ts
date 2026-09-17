@@ -30,12 +30,14 @@ export function selectPendingDateStrings(
 export function removeCompletedTasks(
 	data: TodosData,
 	completedTasks: TaskReference[],
+	completedDate: string,
 ): string[] {
 	const completedKeys = new Set(
 		completedTasks.map((task) =>
 			taskIdentity(task.text, task.scope, task.scheduledDate)),
 	);
 	const removed: string[] = [];
+	const archived: TodosData['completedTasks'] = [];
 
 	for (const scope of ['day', 'week', 'month', 'year', 'scheduled'] as TaskScope[]) {
 		const indicesToRemove = new Set<number>();
@@ -45,16 +47,19 @@ export function removeCompletedTasks(
 
 			indicesToRemove.add(index);
 			removed.push(task.text);
+			archived.push({ ...task, done: true, completedDate });
 			for (let childIndex = index + 1; childIndex < data.tasks[scope].length; childIndex++) {
 				const child = data.tasks[scope][childIndex]!;
 				if (child.indent <= task.indent) break;
 				indicesToRemove.add(childIndex);
+				archived.push({ ...child, done: true, completedDate });
 			}
 		}
 		data.tasks[scope] = data.tasks[scope].filter(
 			(_, index) => !indicesToRemove.has(index),
 		);
 	}
+	data.completedTasks.unshift(...archived);
 
 	return removed;
 }

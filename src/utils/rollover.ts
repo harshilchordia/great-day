@@ -279,6 +279,7 @@ export async function syncRollover(
 				scope: task.originScope,
 				scheduledDate: task.originDate,
 			})),
+		noteDate.format('DD-MM-YYYY'),
 	));
 
 	// New (D) tasks are collected here and prepended to the day list as a batch
