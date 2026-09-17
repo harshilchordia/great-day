@@ -241,6 +241,30 @@ export function extractNewTaskTag(text: string): { tag: string; scope: TaskScope
 	return { tag: match[0], scope };
 }
 
+/** Parses a date or scope suffix from a newly entered task. */
+export function parseTaggedTask(text: string): {
+	text: string;
+	scope: TaskScope;
+	scheduledDate: string | null;
+} | null {
+	const scheduledDate = extractDateTag(text);
+	if (scheduledDate) {
+		return {
+			text: stripDateTag(text),
+			scope: 'scheduled',
+			scheduledDate,
+		};
+	}
+
+	const tag = extractNewTaskTag(text);
+	if (!tag) return null;
+	return {
+		text: stripTag(text),
+		scope: tag.scope,
+		scheduledDate: null,
+	};
+}
+
 /** Removes the scope tag from task text. */
 export function stripTag(text: string): string {
 	return text.replace(TAG_RE, '').trimEnd();

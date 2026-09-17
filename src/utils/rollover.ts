@@ -9,6 +9,7 @@ import {
 	extractDateTag,
 	stripDateTag,
 	serialiseTodos,
+	parseTaggedTask,
 } from './todosParser';
 import { getDailyNoteFile } from './dailyNoteGenerator';
 
@@ -23,6 +24,7 @@ interface ParsedTask {
 	raw: string;
 	done: boolean;
 	text: string;
+	sourceText: string;
 	indent: number;
 	/** Where this task came from, extracted from urgency tag. */
 	originScope: TaskScope;
@@ -155,7 +157,7 @@ export function convertOverdueScheduled(
 			if (taskDate.isValid() && taskDate.isSameOrBefore(dueBy, 'day')) {
 				// Avoid creating a duplicate if an identical day task already exists.
 				if (!data.tasks.day.some((t) => t.text === task.text)) {
-					due.push({ ...task, scope: 'day', scheduledDate: null });
+					due.push({ ...task, scope: 'day' });
 				}
 				continue;
 			}
