@@ -62,3 +62,8 @@ export interface SyncResult {
 	 */
 	todos: TodosData | null;
 }
+
+export interface SyncBatchResult extends SyncResult {
+	/** Whether every discovered note was synced and the persisted cursor may advance. */
+	canAdvanceCursor: boolean;
+}

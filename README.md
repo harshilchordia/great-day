@@ -38,7 +38,7 @@ If you tick off a new task on the same day, it won't be added to TODOs at all.
 
 ### Rollover
 
-At midnight (or when you run **End day**), the plugin syncs the daily note:
+At midnight (or when you run **End day**), the plugin syncs the daily note. Obsidian must be running for the midnight check; if it was closed, the plugin catches up on pending notes the next time it loads.
 
 - **Checked tasks** → removed from TODOs (including sub-tasks)
 - **Unchecked tasks** → stay in TODOs (automatically rolled back)
@@ -81,7 +81,7 @@ Sunday:
 - **Todos file path** — path to your TODOs file (default: `TODOs.md`)
 - **Daily notes folder** — where daily notes are stored (default: `Daily Notes/{{year}}`)
 - **Date format** — moment.js format for filenames (default: `YYYY-MM-DD`)
-- **Auto rollover at midnight** — enable/disable automatic syncing
+- **Auto rollover at midnight** — enable/disable automatic syncing (enabled by default)
 - **Weekly todos review** — add a review task on a specific day each week
 - **New tasks heading** — heading text for the new-tasks section
 
